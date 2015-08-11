@@ -1,8 +1,10 @@
-from obspy import read
+from obspy import read, read_inventory, readEvents
+from obspy.core.util.geodetics import gps2DistAzimuth
+import time
+import glob
 import os
-from obspy.signal.invsim import c_sac_taper
+import re
 import numpy as np
-from obspy.signal.util import _npts2nfft
 
 
 def check_array_order(array, order="ascending"):
@@ -22,55 +24,25 @@ def check_array_order(array, order="ascending"):
         return False
 
 
-def filter_synt(tr, pre_filt):
+def process_obsd_file(filename, stationxml_dir=None, period_band=None,
+                      interp_sampling_rate=None, interp_starttime=None, interp_endtime=None,
+                      outputdir=None, print_mode=False):
     """
-    Perform a frequency domain taper like during the response removal
-    just without an actual response...
+    Processing observed data file
 
-    :param tr:
-    :param pre_filt:
-    :return:
-    """
-
-    data = tr.data.astype(np.float64)
-
-    # smart calculation of nfft dodging large primes
-    nfft = _npts2nfft(len(data))
-
-    fy = 1.0 / (tr.stats.delta * 2.0)
-    freqs = np.linspace(0, fy, nfft // 2 + 1)
-
-    # Transform data to Frequency domain
-    data = np.fft.rfft(data, n=nfft)
-    data *= c_sac_taper(freqs, flimit=pre_filt)
-    data[-1] = abs(data[-1]) + 0.0j
-    # transform data back into the time domain
-    data = np.fft.irfft(data)[0:len(data)]
-    # assign processed data and store processing information
-    tr.data = data
-
-
-def process_synt_file(filename, period_band=None, interp_sampling_rate=None,
-                      interp_starttime=None, interp_endtime=None, outputdir=None,
-                      print_mode=False):
-    """
-    Processing synthetic file(without rotation)
-    Operations include: 1) demean, detrend, taper; 2) filtering; 3) interpolation
-
-    :param synt_file: synt seismogram file path
-    :param period_band: period band used for filtering. Dimension could be either 2 or 4. If 2, then 2 inner corners
-        would be specified; if 4, specify all 4 corners. It should be in ascending order.
+    :param filename:
+    :param stationxml_dir:
+    :param period_band:
     :param interp_sampling_rate:
     :param interp_starttime:
     :param interp_endtime:
     :param outputdir:
+    :param print_mode:
     :return:
     """
 
-    # read in synt file
-    if not os.path.exists(filename):
-        print "file does not exist so skipped: %s" % filename
-        return
+    if os.path.exists(filename):
+        print "file does not exist so skipped: %s" %filename
     st = read(filename)
 
     # calculate the frequency band based on period band(4 corners)
@@ -95,30 +67,35 @@ def process_synt_file(filename, period_band=None, interp_sampling_rate=None,
     if not os.path.exists(outputdir):
         os.makedirs(outputdir)
 
-    nrecords = len(st)
-    # processing
-    print ">>>>>> Processing file: %s" % synt_file if print_mode else ""
+    print ">>>>>> Processing file: %s" % filename if print_mode else ""
+
+    stname = st[0].stats.station
+    nwname = st[0].stats.network
+    # fetch station information and read stationxml file
+    stationxml_file = os.path.join(stationxml_dir, "%s.%s.xml" %(nwname, stname))
+    print "\tAttaching stationxml file:", stationxml_file
+    inv = read_inventory(stationxml_file)
+    st.attach_response(inv)
+
     for i, tr in enumerate(st):
         tr.detrend("linear")
         tr.detrend("demean")
         tr.taper(max_percentage=0.05, type="hann")
 
-        # Perform a frequency domain taper like during the response removal
-        # just without an actual response...
-        filter_synt(tr, pre_filt)
+        tr.remove_response(output="DISP", pre_filt=pre_filt, zero_mean=False,
+                           taper=False)
 
         tr.detrend("linear")
         tr.detrend("demean")
         tr.taper(max_percentage=0.05, type="hann")
 
-        # interpolation
         npts = int((interp_endtime - interp_starttime) / interp_sampling_rate)
         try:
             tr.interpolate(sampling_rate=interp_sampling_rate, starttime=interp_starttime,
                            npts=npts)
         except Exception as e:
-            print "Error: Can not interp synt"
-            print "Error message: %s" % e
+            print "Can not interpolate data: %s" % filename
+            print "Error message:", e
             return
 
     return st
