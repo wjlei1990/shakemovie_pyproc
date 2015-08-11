@@ -137,20 +137,25 @@ def process_synt_file(filename, period_band=None, interp_deltat=None,
             print "Error message: %s" % e
             return
 
+        try:
+            tr.data /= tr.stats.calib
+        except:
+            pass
+
     if outputdir is not None:
         write_out_seismogram(st, outputdir, output_format)
 
     return st
 
 
-def process_obsd_file(filename, stationxml_dir=None, period_band=None,
+def process_obsd_file(filename, stationxmldir=None, period_band=None,
                       interp_deltat=None, interp_starttime=None, interp_endtime=None,
                       outputdir=None, output_format="SAC", print_mode=False):
     """
     Processing observed data file
 
     :param filename:
-    :param stationxml_dir:
+    :param stationxmldir:
     :param period_band:
     :param interp_sampling_rate:
     :param interp_starttime:
@@ -160,8 +165,9 @@ def process_obsd_file(filename, stationxml_dir=None, period_band=None,
     :return:
     """
 
-    if os.path.exists(filename):
+    if not os.path.exists(filename):
         print "file does not exist so skipped: %s" % filename
+        return
     st = read(filename)
 
     # calculate the frequency band based on period band(4 corners)
@@ -181,7 +187,8 @@ def process_obsd_file(filename, stationxml_dir=None, period_band=None,
         freq_c4 = 1.0 / period_band[0]
     else:
         raise ValueError("Length of period_band should be 2 or 4")
-    pre_filt = np.array([freq_c1, freq_c2, freq_c3, freq_c4])
+    #pre_filt = np.array([freq_c1, freq_c2, freq_c3, freq_c4])
+    pre_filt = (freq_c1, freq_c2, freq_c3, freq_c4)
 
     if not os.path.exists(outputdir):
         os.makedirs(outputdir)
@@ -191,7 +198,7 @@ def process_obsd_file(filename, stationxml_dir=None, period_band=None,
     stname = st[0].stats.station
     nwname = st[0].stats.network
     # fetch station information and read stationxml file
-    stationxml_file = os.path.join(stationxml_dir, "%s.%s.xml" %(nwname, stname))
+    stationxml_file = os.path.join(stationxmldir, "%s.%s.xml" %(nwname, stname))
     print "\tAttaching stationxml file:", stationxml_file
     inv = read_inventory(stationxml_file)
     st.attach_response(inv)

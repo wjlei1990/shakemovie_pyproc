@@ -4,10 +4,10 @@ import os
 from proc_util import process_synt_file
 from source import CMTSource
 
-syntdir = "./synt"
+syntdir = "../testdata/synt"
 period_band = [27., 60.]
-cmtfile = "./cmt"
-outputdir = "./synt_proc"
+cmtfile = "../testdata/cmt/C201311120703A"
+outputdir = "../testdata/synt_proc"
 
 # read in cmt
 cmtsource = CMTSource.from_CMTSOLUTION_file(cmtfile)

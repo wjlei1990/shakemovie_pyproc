@@ -2,22 +2,15 @@ from obspy import readEvents
 import time
 import glob
 import os
-from data_util import *
 import sys
 from source import CMTSource
 from proc_util import process_obsd_file
 
-if len(sys.argv) != 4:
-    raise ValueError("Incorrect arg number")
-
-# clock
-t1 = time.time()
-
-datadir = "./obsd"
+datadir = "../testdata/obsd"
 period_band = [27., 60.]
-cmtfile = "./cmt"
-outputdir = "./synt_proc"
-stationxmldir = "./stationxml"
+cmtfile = "../testdata/cmt/C201311120703A"
+outputdir = "../testdata/obsd_proc"
+stationxmldir = "../testdata/stationxml"
 
 # read in cmt
 cmtsource = CMTSource.from_CMTSOLUTION_file(cmtfile)
@@ -38,7 +31,7 @@ t1 = time.time()
 for obsd_file in obsd_filelist:
     process_obsd_file(obsd_file, stationxmldir=stationxmldir, period_band=period_band,
                       interp_deltat=interp_deltat, interp_starttime=starttime, interp_endtime=endtime,
-                      outputdir="./synt_proc", output_format="SAC", print_mode=True)
+                      outputdir=outputdir, output_format="SAC", print_mode=True)
 
 # clock
 t2 = time.time()
