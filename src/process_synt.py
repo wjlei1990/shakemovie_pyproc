@@ -27,7 +27,7 @@ t1 = time.time()
 
 for synt_file in synt_filelist:
     process_synt_file(synt_file, period_band=period_band, interp_deltat=interp_deltat,
-                      interp_starttime=interp_starttime, interp_endtime=interp_endtime,
+                      interp_starttime=starttime, interp_endtime=endtime,
                       outputdir=outputdir, output_format="sac", print_mode=True)
 
 # clock
