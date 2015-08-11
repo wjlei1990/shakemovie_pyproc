@@ -1,8 +1,11 @@
+import obspy
 from obspy import read, read_inventory
 import os
+import glob
 from obspy.signal.invsim import c_sac_taper
 import numpy as np
 from obspy.signal.util import _npts2nfft
+from obspy.core.util.geodetics import gps2DistAzimuth
 
 
 def check_array_order(array, order="ascending"):
@@ -50,13 +53,15 @@ def filter_synt(tr, pre_filt):
     tr.data = data
 
 
-def write_out_seismogram(st, outputdir, output_format, originfn=None):
+def write_out_seismogram(st, outputdir, output_format):
     output_format = output_format.lower()
     if not os.path.exists(outputdir):
         os.makedirs(outputdir)
     if output_format == "mseed":
-        outputfn = os.path.basename(originfn)
-        outputpath = os.path.join(outputdir, outputfn+".proc")
+        station=st[0].stats.station
+        network=st[0].stats.network
+        outputfn = os.path.basename("%s.%s.mseed")
+        outputpath = os.path.join(outputdir, outputfn)
         st.write(outputpath, format="mseed")
     if output_format == "sac":
         for tr in st:
@@ -225,6 +230,101 @@ def process_obsd_file(filename, stationxmldir=None, period_band=None,
             return
 
     if outputdir is not None:
-        write_out_seismogram(st, outputdir, output_format, originfn=filename)
+        write_out_seismogram(st, outputdir, output_format)
 
     return st
+
+def generate_compN_filelist(compE_filelist, channel_code):
+
+    compN_filelist = []
+    for efile in compE_filelist:
+        dirname = os.path.dirname(efile)
+        basename = os.path.basename(efile)
+        content = basename.split(".")
+        for i in range(len(content)):
+            if content[i] == "%sE" % channel_code:
+                content[i] = "MXN"
+        nfilebase = ".".join(content)
+        compN_filelist.append(os.path.join(dirname, nfilebase))
+
+    return compN_filelist
+
+def rotate_subs(st, stationxmldir, event_loc):
+
+    # event info
+    event_latitude = event_loc[0]
+    event_longitude = event_loc[1]
+
+    # station info
+    nw = st[0].stats.network
+    sta = st[0].stats.station
+    stationxmlfile = os.path.join(stationxmldir, "%s.%s.xml" % (nw, sta))
+    inv = read_inventory(stationxmlfile)
+    station_latitude = float(inv[0][0].latitude)
+    station_longitude = float(inv[0][0].longitude)
+    _, baz, _ = gps2DistAzimuth(station_latitude, station_longitude,
+                                    event_latitude, event_longitude)
+
+    components = [tr.stats.channel[-1] for tr in st]
+    print "components:", components
+    if "N" in components and "E" in components:
+        print "Rotate"
+        _, baz, _ = gps2DistAzimuth(station_latitude, station_longitude,
+                                event_latitude, event_longitude)
+        st.rotate(method="NE->RT", back_azimuth=baz)
+
+
+def write_rotated_seismogram(st, outputdir, outputformat):
+
+    # collect 3 components data
+    stnew = st.select(channel="*R")
+    st_T = st.select(channel="*T")
+    #st_Z = st.select(channel="*Z")
+    print st_T
+    #print st_Z
+    stnew.append(st_T[0])
+    #stnew.append(st_Z[0])
+    write_out_seismogram(st, outputdir=outputdir, output_format=outputformat)
+
+
+def rotate_trace(inputdir, data_format="sac", channel_code="MX", outputdir=None, outputformat="sac",
+                      event=None, stationxmldir=None):
+    from source import CMTSource
+
+    # extract event information
+    if isinstance(event, obspy.core.event.Catalog):
+        if len(event) != 1:
+            raise ValueError("Event contains more than 1 origin")
+        origin = event.preferred_origin() or event.origins[0]
+        event_latitude = origin.latitude
+        event_longitude = origin.longitude
+    elif isinstance(event, CMTSource):
+        event_latitude = event.latitude
+        event_longitude = event.longitude
+    else:
+        raise ValueError("event information incorrect")
+
+    if data_format.lower() == "sac":
+        compE_filelist = glob.glob(os.path.join(inputdir, "*.*.%sE.*" % channel_code))
+        compN_filelist = generate_compN_filelist(compE_filelist, channel_code)
+        for compE_file, compN_file in zip(compE_filelist, compN_filelist):
+            print compE_file, compN_file
+            try:
+                st = read(compE_file)
+                st1 = read(compN_file)
+                st.append(st1[0])
+            except Exception as e:
+                print "can not read so skip: %s" % compE_file
+                print "Error: %s" % e
+            rotate_subs(st, stationxmldir, [event_latitude, event_longitude])
+            write_rotated_seismogram(st, outputdir, outputformat)
+
+    elif data_format.lower() == "mseed":
+        filelist = glob.glob(os.path.join(inputdir, "*.mseed"))
+        for mfile in filelist:
+            st = read(mfile)
+            rotate_subs(st, stationxmldir, [event_latitude, event_longitude])
+            write_rotated_seismogram(st, outputdir, outputformat)
+
+
+
