@@ -53,17 +53,17 @@ def filter_synt(tr, pre_filt):
     tr.data = data
 
 
-def write_out_seismogram(st, outputdir, output_format):
-    output_format = output_format.lower()
+def write_out_seismogram(st, outputdir, outputformat):
+    outputformat = outputformat.lower()
     if not os.path.exists(outputdir):
         os.makedirs(outputdir)
-    if output_format == "mseed":
+    if outputformat == "mseed":
         station=st[0].stats.station
         network=st[0].stats.network
         outputfn = os.path.basename("%s.%s.mseed")
         outputpath = os.path.join(outputdir, outputfn)
         st.write(outputpath, format="mseed")
-    if output_format == "sac":
+    if outputformat == "sac":
         for tr in st:
             station = tr.stats.station
             network = tr.stats.network
@@ -192,7 +192,6 @@ def process_obsd_file(filename, stationxmldir=None, period_band=None,
         freq_c4 = 1.0 / period_band[0]
     else:
         raise ValueError("Length of period_band should be 2 or 4")
-    #pre_filt = np.array([freq_c1, freq_c2, freq_c3, freq_c4])
     pre_filt = (freq_c1, freq_c2, freq_c3, freq_c4)
 
     if not os.path.exists(outputdir):
@@ -243,7 +242,7 @@ def generate_compN_filelist(compE_filelist, channel_code):
         content = basename.split(".")
         for i in range(len(content)):
             if content[i] == "%sE" % channel_code:
-                content[i] = "MXN"
+                content[i] = "%sN" % channel_code
         nfilebase = ".".join(content)
         compN_filelist.append(os.path.join(dirname, nfilebase))
 
@@ -268,7 +267,6 @@ def rotate_subs(st, stationxmldir, event_loc):
     components = [tr.stats.channel[-1] for tr in st]
     print "components:", components
     if "N" in components and "E" in components:
-        print "Rotate"
         _, baz, _ = gps2DistAzimuth(station_latitude, station_longitude,
                                 event_latitude, event_longitude)
         st.rotate(method="NE->RT", back_azimuth=baz)
@@ -277,14 +275,17 @@ def rotate_subs(st, stationxmldir, event_loc):
 def write_rotated_seismogram(st, outputdir, outputformat):
 
     # collect 3 components data
-    stnew = st.select(channel="*R")
-    st_T = st.select(channel="*T")
-    #st_Z = st.select(channel="*Z")
-    print st_T
-    #print st_Z
-    stnew.append(st_T[0])
-    #stnew.append(st_Z[0])
-    write_out_seismogram(st, outputdir=outputdir, output_format=outputformat)
+    if outputformat.lower() == "sac":
+        stnew = st.select(channel="*R")
+        st_T = st.select(channel="*T")
+        stnew.append(st_T[0])
+    elif outputformat.lower() == "mseed":
+        stnew = st.select(channel="*R")
+        st_T = st.select(channel="*T")
+        st_Z = st.select(channel="*Z")
+        stnew.append(st_T[0])
+        stnew.append(st_Z[0])
+    write_out_seismogram(st, outputdir=outputdir, outputformat=outputformat)
 
 
 def rotate_trace(inputdir, data_format="sac", channel_code="MX", outputdir=None, outputformat="sac",
@@ -308,7 +309,7 @@ def rotate_trace(inputdir, data_format="sac", channel_code="MX", outputdir=None,
         compE_filelist = glob.glob(os.path.join(inputdir, "*.*.%sE.*" % channel_code))
         compN_filelist = generate_compN_filelist(compE_filelist, channel_code)
         for compE_file, compN_file in zip(compE_filelist, compN_filelist):
-            print compE_file, compN_file
+            print ">>>> Rotating: [%s, %s]" % (compE_file, compN_file)
             try:
                 st = read(compE_file)
                 st1 = read(compN_file)
@@ -325,6 +326,3 @@ def rotate_trace(inputdir, data_format="sac", channel_code="MX", outputdir=None,
             st = read(mfile)
             rotate_subs(st, stationxmldir, [event_latitude, event_longitude])
             write_rotated_seismogram(st, outputdir, outputformat)
-
-
-
